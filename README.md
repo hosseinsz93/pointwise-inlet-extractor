@@ -1,115 +1,91 @@
-# Grid Processing Python Scripts
+# 🚀 Pointwise Inlet Extractor
 
-Three Python scripts to extract inlet boundary coordinates from Pointwise-generated grid files for use with [GenerateInflow-VFS3.1](https://github.com/hosseinsz93/GenerateInflow-VFS3.1).
+Python toolkit for extracting inlet boundary coordinates from CFD grid files. Supports massive Tecplot files (10+ GB) with parallel processing.
 
-## Prerequisites
+## ⚡ Quick Start
 
-Convert Plot3D file to Tecplot ASCII format:
-1. Generate Plot3D file in Pointwise (e.g., `grid.x`)
-2. Import `.x` file into Tecplot → Export as ASCII `.dat` file
-3. Use the `.dat` file with these Python scripts
-
-## Quick Start
-
+### **Large Files (10+ GB) - AUTOMATED:**
 ```bash
-python extract_inlet_boundary.py    # Find all boundary faces
-# Check output files to identify your inlet face
-python convert_to_xyz_dat.py        # Convert to xyz.dat for GenerateInflow
+python extract_inlet_simple_parallel.py    # Auto-extracts inlet
+python convert_inlet_coordinates_optimized.py    # Converts to xyz format
 ```
 
-**Requirements**: `pip install numpy`
-
----
-
-## Script Details
-
-### 📊 `extract_inlet_boundary.py`
-
-**Purpose**: Finds all 6 boundary faces to identify which one is your inlet.
-
-**Usage**:
+### **Small Files (<1 GB) - SIMPLE:**
 ```bash
-python extract_inlet_boundary.py
+python extract_inlet_simple.py    # Manual configuration required
+python convert_inlet_coordinates.py    # Basic conversion
 ```
 
-**Output**: Creates 6 files (one for each boundary face):
-- `inlet_boundary_i_min.txt`, `inlet_boundary_i_max.txt`
-- `inlet_boundary_j_min.txt`, `inlet_boundary_j_max.txt`
-- `inlet_boundary_k_min.txt`, `inlet_boundary_k_max.txt`
-
----
-
-### 🎯 `extract_inlet_simple.py`
-
-**Purpose**: Extracts a specific inlet face once you know which one it is.
-
-**Configuration**: Edit these variables in the script:
-```python
-grid_file = "grid.dat"    # Your Tecplot file
-inlet_face = "k_min"           # Change to your inlet face
-```
-
-**Usage**:
+## 📋 Prerequisites
 ```bash
-python extract_inlet_simple.py
+pip install numpy tqdm psutil
+# Input: Tecplot ASCII (.dat) file with DATAPACKING=POINT
 ```
 
 ---
 
-### 🔄 `convert_to_xyz_dat.py`
+## 📖 Scripts Overview
 
-**Purpose**: Converts inlet coordinates to xyz.dat format for CFD preprocessing.
+| **Script** | **Use Case** | **Performance** |
+|------------|--------------|-----------------|
+| `extract_inlet_simple.py` | Learning, small files | Serial, requires RAM = file size |
+| `extract_inlet_simple_parallel.py` | **Production, large files** | **Parallel, 1-2GB RAM** |
+| `convert_inlet_coordinates.py` | Basic conversion | Serial, <100K points |
+| `convert_inlet_coordinates_optimized.py` | **Large datasets** | **Memory mapping, 10-100x faster** |
 
-**Input**: `inlet_boundary_k_min.txt` (from previous scripts)
+### **🤖 Agent Mode** (`extract_inlet_simple_parallel.py`)
+- **Fully autonomous** - no configuration needed
+- **Auto-detects** grid files and optimal settings
+- **Parallel processing** with all CPU cores
+- **Memory efficient** - handles files larger than RAM
 
-**Output**: 
-- `kmin_face_simple.xyz.dat` (recommended)
-- `kmin_face_structured.xyz.dat`
-
-**Usage**:
-```bash
-python convert_to_xyz_dat.py
+**Real Example:**
 ```
+📁 Grid: grid-flood.dat (10.4 GB) → 126,049 inlet points in 5 minutes
+```
+
+### **⚡ Optimized Converter** (`convert_inlet_coordinates_optimized.py`)
+- **Memory mapping** for efficient large file access
+- **Vectorized parsing** with NumPy (10-100x speedup)
+- **Parallel I/O** for simultaneous file operations
 
 ---
 
-## Requirements
+## 📁 File Formats
 
-**Dependencies**:
-```bash
-pip install numpy
+**Input (Tecplot):**
 ```
-
-**Input File**: 
-- `grid.dat` - ASCII Tecplot file (converted from Pointwise Plot3D file)
-
----
-
-## File Formats
-
-**Tecplot Input** (`.dat`):
-```
-TITLE     = "Plot3D DataSet"  
 VARIABLES = "X" "Y" "Z"
-ZONE T="grid.test.x:1"
-I=101, J=101, K=501, ZONETYPE=Ordered
+I=1637, J=77, K=1637, ZONETYPE=Ordered
 DATAPACKING=POINT
+7.249556e+05 4.560158e+06 -2.830000e+01
 ```
 
-**XYZ.DAT Output**:
+**Output:**
+- `inlet_boundary_coordinates.txt` - Extracted coordinates
+- `xyz_optimized.dat` - Combined format
+- `inlet_coords_x/y/z.txt/.npy` - Separate arrays
+![Alt text](./image-directions.png)
+---
+
+## 🔧 Configuration
+
+**Basic Scripts:** Edit variables in script
+```python
+grid_file = "grid-flood.dat"
+inlet_face = "k_min"  # Options: i_min/max, j_min/max, k_min/max
 ```
-101 101 501           # Grid dimensions
-0.000000  0  0        # X coordinates
-0.010000  0  0
-...
-0  0.000000  0        # Y coordinates  
-0  0.010000  0
-...
-0  0  0.000000        # Z coordinates
-0  0  0.010000
-...
-```
+
+**Parallel Scripts:** Automatic or interactive prompts
 
 ---
 
-**Use the generated `kmin_face_simple.xyz.dat` file with [GenerateInflow-VFS3.1](https://github.com/hosseinsz93/GenerateInflow-VFS3.1) for turbulent inflow generation.**
+## 🛠️ Troubleshooting
+
+- **Memory Error:** Use parallel versions (`*_parallel.py`, `*_optimized.py`)
+- **No inlet found:** Try different `inlet_face` (i_min, j_max, etc.)
+- **File format:** Ensure Tecplot ASCII with `DATAPACKING=POINT`
+
+---
+
+**⭐ Recommendation: Use parallel/optimized versions for production work!**

@@ -98,7 +98,7 @@ def save_inlet_coordinates(coords, output_file="inlet_boundary_coordinates.txt")
 # Main execution
 if __name__ == "__main__":
     # Configuration - MODIFY THESE VALUES
-    grid_file = "grid.test.dat"  # Your Tecplot grid file
+    grid_file = "grid-flood.dat"  # Your Tecplot grid file
     inlet_face = "k_min"         # Change this to the correct inlet face
                                  # Options: 'i_min', 'i_max', 'j_min', 'j_max', 'k_min', 'k_max'
     
