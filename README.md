@@ -1,91 +1,125 @@
-# 🚀 Pointwise Inlet Extractor
+# Pointwise Inlet Extractor
 
-Python toolkit for extracting inlet boundary coordinates from CFD grid files. Supports massive Tecplot files (10+ GB) with parallel processing.
+Extract inlet boundary coordinates from Tecplot ASCII grid files with MATLAB scripts optimized for different grid sizes.
 
-## ⚡ Quick Start
+## Tools
 
-### **Large Files (10+ GB) - AUTOMATED:**
+### `tecplotdata.m` - Standard Processor
+**Best for:** Small to medium grids (<1GB files, <50M points)
+- Simple, reliable processing
+- Low memory overhead
+- Sequential processing
+- Suitable for files up to ~1GB
+
+### `tecplotdata_parallel.m` - High-Performance Processor
+**Best for:** Large to massive grids (>1GB files, >50M points)
+- **Smart processing modes:**
+  - Files ≤1GB: Parallel parsing with full grid processing
+  - Files >1GB: Streaming approach with inlet-only extraction
+- **Memory management:** Processes files in 50MB chunks
+- **Performance:** 6x speedup on multi-core systems
+- **Handles files up to 11GB+** successfully
+
+## Requirements
+
+### MATLAB Requirements
+- MATLAB R2019b or later
+- **For `tecplotdata_parallel.m`:**
+  - Parallel Computing Toolbox
+  - Minimum 8GB RAM recommended
+  - Multi-core CPU for optimal performance
+
+## Usage
+
+### Standard Processing (Small Grid)
+```matlab
+% For grids <1GB
+filename = './grid-small.dat';
+orientation = 1; % 0=Y-normal, 1=Z-normal
+tecplotdata
+```
+
+### High-Performance Processing (Large Grid)
+```matlab
+% For grids >1GB with parallel processing
+tecplotdata_parallel()
+```
+
+### HPC Cluster Processing
 ```bash
-python extract_inlet_simple_parallel.py    # Auto-extracts inlet
-python convert_inlet_coordinates_optimized.py    # Converts to xyz format
+# On HPC cluster
+module load matlab
+matlab -batch "tecplotdata_parallel"
 ```
 
-### **Small Files (<1 GB) - SIMPLE:**
-```bash
-python extract_inlet_simple.py    # Manual configuration required
-python convert_inlet_coordinates.py    # Basic conversion
+## File Size Guidelines
+
+| Grid Size | File Size | Recommended Tool | Memory Needed |
+|-----------|-----------|------------------|---------------|
+| <10M points | <100MB | `tecplotdata.m` | <2GB |
+| 10-50M points | 100MB-1GB | `tecplotdata.m` or `tecplotdata_parallel.m` | 2-8GB |
+| 50-200M points | 1-10GB | `tecplotdata_parallel.m` | 4-16GB |
+| >200M points | >10GB | `tecplotdata_parallel.m` (streaming) | <8GB |
+
+## Output
+
+Both scripts generate CSV files with inlet boundary coordinates:
+- `inlet_boundary_coordinates.csv` (standard)
+- `inlet_boundary_coordinates_parallel.csv` (parallel)
+
+**Format:**
+```csv
+Nx,Ny,Nz
+x1,y1,z1    % Section 1: Varying i coordinates
+x2,y2,z2
+...
+x1,y1,z1    % Section 2: Varying j coordinates
+x2,y2,z2
+...
+x1,y1,z1    % Section 3: Varying k coordinates
+x2,y2,z2
+...
 ```
 
-## 📋 Prerequisites
-```bash
-pip install numpy tqdm psutil
-# Input: Tecplot ASCII (.dat) file with DATAPACKING=POINT
+## Coordinate Mapping
+
+### Y-Normal (orientation = 0)
 ```
+i → X direction, j → Y direction, k → Z direction
+Output: [X, Y, Z]
+```
+
+### Z-Normal (orientation = 1)
+```
+i → Y direction, j → Z direction, k → X direction
+Output: [Y, Z, X]
+```
+
+## Performance Test
+
+**Test Case:** 206M Point Grid (1637×77×1637), 10.9GB file
+
+| Tool | Processing Time | Memory Usage | Success |
+|------|----------------|--------------|----------|
+| `tecplotdata.m` | ❌ Out of Memory | >16GB | Failed |
+| `tecplotdata_parallel.m` | ✅ 45 minutes | 8GB | Success |
+
+## Author
+
+**Hossein Seyedzadeh**
+- Repository: https://github.com/hosseinsz93/pointwise-inlet-extractor
+- Last updated: August 27, 2025
 
 ---
 
-## 📖 Scripts Overview
+## Quick Start
 
-| **Script** | **Use Case** | **Performance** |
-|------------|--------------|-----------------|
-| `extract_inlet_simple.py` | Learning, small files | Serial, requires RAM = file size |
-| `extract_inlet_simple_parallel.py` | **Production, large files** | **Parallel, 1-2GB RAM** |
-| `convert_inlet_coordinates.py` | Basic conversion | Serial, <100K points |
-| `convert_inlet_coordinates_optimized.py` | **Large datasets** | **Memory mapping, 10-100x faster** |
-
-### **🤖 Agent Mode** (`extract_inlet_simple_parallel.py`)
-- **Fully autonomous** - no configuration needed
-- **Auto-detects** grid files and optimal settings
-- **Parallel processing** with all CPU cores
-- **Memory efficient** - handles files larger than RAM
-
-**Real Example:**
-```
-📁 Grid: grid-flood.dat (10.4 GB) → 126,049 inlet points in 5 minutes
+**Small grids (<1GB):**
+```matlab
+tecplotdata
 ```
 
-### **⚡ Optimized Converter** (`convert_inlet_coordinates_optimized.py`)
-- **Memory mapping** for efficient large file access
-- **Vectorized parsing** with NumPy (10-100x speedup)
-- **Parallel I/O** for simultaneous file operations
-
----
-
-## 📁 File Formats
-
-**Input (Tecplot):**
+**Large grids (>1GB):**
+```matlab
+tecplotdata_parallel()
 ```
-VARIABLES = "X" "Y" "Z"
-I=1637, J=77, K=1637, ZONETYPE=Ordered
-DATAPACKING=POINT
-7.249556e+05 4.560158e+06 -2.830000e+01
-```
-
-**Output:**
-- `inlet_boundary_coordinates.txt` - Extracted coordinates
-- `xyz_optimized.dat` - Combined format
-- `inlet_coords_x/y/z.txt/.npy` - Separate arrays
-![Alt text](./image-directions.png)
----
-
-## 🔧 Configuration
-
-**Basic Scripts:** Edit variables in script
-```python
-grid_file = "grid-flood.dat"
-inlet_face = "k_min"  # Options: i_min/max, j_min/max, k_min/max
-```
-
-**Parallel Scripts:** Automatic or interactive prompts
-
----
-
-## 🛠️ Troubleshooting
-
-- **Memory Error:** Use parallel versions (`*_parallel.py`, `*_optimized.py`)
-- **No inlet found:** Try different `inlet_face` (i_min, j_max, etc.)
-- **File format:** Ensure Tecplot ASCII with `DATAPACKING=POINT`
-
----
-
-**⭐ Recommendation: Use parallel/optimized versions for production work!**
