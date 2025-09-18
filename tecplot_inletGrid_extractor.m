@@ -24,7 +24,7 @@ close all;
 tic;
 
 %% 2. TECPLOT FILE PARAMETERS
-filename = './grid-test1.dat';  % <-- change to your actual file name
+filename = './grid3mm.dat';  % <-- change to your actual file name
 
 % Grid dimensions will be detected automatically from file header
 Nx = [];  % Will be auto-detected
