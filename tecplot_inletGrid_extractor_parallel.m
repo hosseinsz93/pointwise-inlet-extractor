@@ -94,8 +94,13 @@ end
 tic_total = tic;
 
 %% CONFIGURATION
-filename = './grid-flood.dat';  % <-- change to your actual file name
-orientation = 1; % 0 (y-normal), 1 (z-normal)
+% Available files in directory:
+% - 'grid-flood-ND-translated.dat'
+% - 'grid-ND-translated.dat'
+% - 'grid6mm.dat'
+% - 'grid6mmRotated.dat'
+filename = 'grid-flood-ND-rotated-translated-syntheticn.dat';  % <-- change to your desired file
+orientation = 0; % 0 (y-normal), 1 (z-normal)
 
 fprintf('\nProcessing file: %s\n', filename);
 if orientation == 1
@@ -109,6 +114,9 @@ fprintf('\n[1/4] Parallel file reading and header parsing...\n');
 
 % Check file size
 file_info = dir(filename);
+if isempty(file_info)
+    error('❌ File not found: %s\nPlease check the filename and path.', filename);
+end
 file_size_mb = file_info.bytes / 1e6;
 fprintf('File size: %.1f MB\n', file_size_mb);
 
@@ -194,66 +202,43 @@ else
 
     fprintf('✅ Parsed %.1fM numbers\n', length(data_numbers)/1e6);
     
+    % Calculate memory requirements
+    memory_needed_gb = N_total * 3 * 8 / 1e9;
+    fprintf('Full grid memory needed: %.1f GB\n', memory_needed_gb);
+    
     % Extract inlet coordinates
+    fprintf('Extracting inlet boundary only (k=1) to save memory...\n');
     k_inlet = 1;
     slice_start = (k_inlet-1) * Nx * Ny + 1;
     slice_end = k_inlet * Nx * Ny;
     
+    % Validate data availability
+    expected_numbers = N_total * 3;
+    actual_numbers = length(data_numbers);
+    fprintf('Data validation: Expected %d, Got %d numbers\n', expected_numbers, actual_numbers);
+    
+    if actual_numbers < expected_numbers
+        warning('Insufficient data detected. Some coordinates may be missing.');
+    end
+    
+    % Extract inlet coordinates
     inlet_x = reshape(data_numbers(slice_start:slice_end), [Nx, Ny]);
     inlet_y = reshape(data_numbers(N_total + slice_start:N_total + slice_end), [Nx, Ny]);
     inlet_z = reshape(data_numbers(2*N_total + slice_start:2*N_total + slice_end), [Nx, Ny]);
     
+    fprintf('✅ Successfully extracted inlet boundary: %d × %d points\n', Nx, Ny);
     clear data_numbers; % Free memory
 end
 
 %% STAGE 3: COORDINATE PROCESSING 
 fprintf('\n[3/4] Coordinate processing...\n');
 
-if file_size_mb <= 1000
-    % For smaller files, extract from parsed data
-    fprintf('Processing coordinates from parsed data...\n');
-    
-    % Calculate memory requirements
-    memory_needed_gb = N_total * 3 * 8 / 1e9;
-    fprintf('Full grid memory needed: %.1f GB\n', memory_needed_gb);
-
-    % Extract only inlet boundary (k=1 plane) to avoid memory issues
-    fprintf('Extracting inlet boundary only (k=1) to save memory...\n');
-    k_inlet = 1;
-
-    % Calculate indices for inlet plane (k=1)
-    slice_start = (k_inlet-1) * Nx * Ny + 1;
-    slice_end = k_inlet * Nx * Ny;
-
-    % Validate data availability
-    if exist('data_numbers', 'var')
-        expected_numbers = N_total * 3;
-        actual_numbers = length(data_numbers);
-        fprintf('Data validation: Expected %d, Got %d numbers\n', expected_numbers, actual_numbers);
-
-        if actual_numbers < expected_numbers
-            warning('Insufficient data detected. Some coordinates may be missing.');
-        end
-    end
-
-    % Extract inlet coordinates directly without full 3D arrays
-    try
-        if exist('data_numbers', 'var')
-            inlet_x = reshape(data_numbers(slice_start:slice_end), [Nx, Ny]);
-            inlet_y = reshape(data_numbers(N_total + slice_start:N_total + slice_end), [Nx, Ny]);
-            inlet_z = reshape(data_numbers(2*N_total + slice_start:2*N_total + slice_end), [Nx, Ny]);
-            clear data_numbers; % Free memory immediately
-        else
-            error('No coordinate data available for processing');
-        end
-        fprintf('✅ Successfully extracted inlet boundary: %d × %d points\n', Nx, Ny);
-    catch ME
-        error('❌ Failed to extract inlet coordinates: %s', ME.message);
-    end
-else
-    % For large files, coordinates already extracted via streaming
-    fprintf('Inlet boundary already extracted via streaming approach\n');
+% Verify that inlet coordinates were successfully extracted
+if ~exist('inlet_x', 'var') || ~exist('inlet_y', 'var') || ~exist('inlet_z', 'var')
+    error('❌ Failed to extract inlet coordinates');
 end
+
+fprintf('✅ Inlet coordinates ready for output\n');
 
 %% STAGE 4: COORDINATE OUTPUT AND WRITING
 fprintf('\n[4/4] Coordinate output and writing...\n');
@@ -356,10 +341,10 @@ function parallel_write_coordinates(filename, inlet_x, inlet_y, inlet_z, Nx, Ny,
     
     fprintf('  Using parallel coordinate writing...\n');
     
-    % Prepare coordinate sections in parallel
-    sections = cell(3, 1);
+    % Prepare coordinate sections in parallel (only X and Y sections)
+    sections = cell(2, 1);
     
-    % Section 1: Varying i coordinates
+    % Section 1: Varying i coordinates (X section)
     if orientation == 1  % Z-normal
         parfor i = 1:Nx
             coord_i(i,:) = [inlet_y(i,1), inlet_z(i,1), inlet_x(i,1)];
@@ -371,7 +356,7 @@ function parallel_write_coordinates(filename, inlet_x, inlet_y, inlet_z, Nx, Ny,
     end
     sections{1} = coord_i;
     
-    % Section 2: Varying j coordinates
+    % Section 2: Varying j coordinates (Y section)
     if orientation == 1  % Z-normal
         parfor j = 1:Ny
             coord_j(j,:) = [inlet_y(1,j), inlet_z(1,j), inlet_x(1,j)];
@@ -383,20 +368,14 @@ function parallel_write_coordinates(filename, inlet_x, inlet_y, inlet_z, Nx, Ny,
     end
     sections{2} = coord_j;
     
-    % Section 3: Varying k coordinates (constant)
-    if orientation == 1  % Z-normal
-        coord_k_base = [inlet_y(1,1), inlet_z(1,1), inlet_x(1,1)];
-    else  % Y-normal
-        coord_k_base = [inlet_x(1,1), inlet_y(1,1), inlet_z(1,1)];
-    end
-    coord_k = repmat(coord_k_base, Nz, 1);
-    sections{3} = coord_k;
+    % DO NOT write Section 3 (Z coordinates)
     
     % Write to file
     fid = fopen(filename, 'w');
-    fprintf(fid, '%d,%d,%d\n', Nx, Ny, Nz);
+    fprintf(fid, '%d %d %d\n', Nx, Ny, Nz);
     
-    for section = 1:3
+    % Write only X and Y sections (sections 1 and 2)
+    for section = 1:2
         coords = sections{section};
         for i = 1:size(coords, 1)
             fprintf(fid, '%.10e %.10e %.10e\n', coords(i,1), coords(i,2), coords(i,3));
@@ -404,7 +383,7 @@ function parallel_write_coordinates(filename, inlet_x, inlet_y, inlet_z, Nx, Ny,
     end
     
     fclose(fid);
-    fprintf('  ✅ Parallel coordinate writing completed\n');
+    fprintf('  ✅ Parallel coordinate writing completed (X and Y sections only)\n');
 end
 
 function serial_write_coordinates(filename, inlet_x, inlet_y, inlet_z, Nx, Ny, Nz, orientation)
@@ -413,149 +392,176 @@ function serial_write_coordinates(filename, inlet_x, inlet_y, inlet_z, Nx, Ny, N
     fprintf('  Using standard coordinate writing...\n');
     
     fid = fopen(filename, 'w');
-    fprintf(fid, '%d,%d,%d\n', Nx, Ny, Nz);
+    fprintf(fid, '%d %d %d\n', Nx, Ny, Nz);
     
     if orientation == 1  % Z-normal
-        % Section 1: Varying i
+        % Section 1: Varying i (X coordinates)
         for i = 1:Nx
             fprintf(fid, '%.10e %.10e %.10e\n', inlet_y(i,1), inlet_z(i,1), inlet_x(i,1));
         end
         
-        % Section 2: Varying j
+        % Section 2: Varying j (Y coordinates) - STOP HERE
         for j = 1:Ny
             fprintf(fid, '%.10e %.10e %.10e\n', inlet_y(1,j), inlet_z(1,j), inlet_x(1,j));
         end
         
-        % Section 3: Varying k
-        coord_k = [inlet_y(1,1), inlet_z(1,1), inlet_x(1,1)];
-        for k = 1:Nz
-            fprintf(fid, '%.10e %.10e %.10e\n', coord_k(1), coord_k(2), coord_k(3));
-        end
+        % DO NOT write Section 3 (Z coordinates)
         
     else  % Y-normal
-        % Section 1: Varying i
+        % Section 1: Varying i (X coordinates)
         for i = 1:Nx
             fprintf(fid, '%.10e %.10e %.10e\n', inlet_x(i,1), inlet_y(i,1), inlet_z(i,1));
         end
         
-        % Section 2: Varying j
+        % Section 2: Varying j (Y coordinates) - STOP HERE
         for j = 1:Ny
             fprintf(fid, '%.10e %.10e %.10e\n', inlet_x(1,j), inlet_y(1,j), inlet_z(1,j));
         end
         
-        % Section 3: Varying k
-        coord_k = [inlet_x(1,1), inlet_y(1,1), inlet_z(1,1)];
-        for k = 1:Nz
-            fprintf(fid, '%.10e %.10e %.10e\n', coord_k(1), coord_k(2), coord_k(3));
-        end
+        % DO NOT write Section 3 (Z coordinates)
     end
     
     fclose(fid);
-    fprintf('  ✅ Standard coordinate writing completed\n');
+    fprintf('  ✅ Standard coordinate writing completed (X and Y sections only)\n');
 end
 
 function [inlet_x, inlet_y, inlet_z] = read_inlet_streaming(fid, data_start_pos, Nx, Ny, Nz)
     % Read only inlet boundary data using streaming approach to save memory
-    
+
     fprintf('  Streaming inlet boundary data (k=1 plane)...\n');
-    
+
     N_total = Nx * Ny * Nz;
     inlet_points = Nx * Ny;
-    
+
     % Position to start of coordinate data
     fseek(fid, data_start_pos, 'bof');
-    
+
     % Read data in manageable chunks and parse progressively
     fprintf('    Parsing coordinate data in chunks...\n');
-    
-    % Read the entire data section into memory in chunks
-    chunk_size = 50 * 1024 * 1024; % 50MB chunks
-    all_numbers = [];
+
+    % Chunked reading (50MB)
+    chunk_size = 50 * 1024 * 1024; % 50MB chunks of text
     chunk_count = 0;
-    
+
+    % We only keep what we need: inlet planes for X, Y, Z
+    x_data = zeros(inlet_points, 1);
+    y_data = zeros(inlet_points, 1);
+    z_data = zeros(inlet_points, 1);
+    x_written = 0; y_written = 0; z_written = 0;
+
+    % Global index of numbers parsed so far across entire data section
+    global_idx = 0; % counts numbers (1-based conceptually)
+
+    % Target index ranges (1-based) within the whole number stream
+    x_a = 1;               x_b = inlet_points;
+    y_a = N_total + 1;     y_b = N_total + inlet_points;
+    z_a = 2*N_total + 1;   z_b = 2*N_total + inlet_points;
+
     while ~feof(fid)
         chunk_count = chunk_count + 1;
-        fprintf('      Reading chunk %d...\n', chunk_count);
-        
+        if mod(chunk_count, 10) == 1
+            fprintf('      Reading chunk %d...\n', chunk_count);
+        end
+
         % Read chunk of text
         chunk_text = fread(fid, chunk_size, '*char')';
-        
         if isempty(chunk_text)
             break;
         end
-        
-        % Find complete numbers by ensuring we don't split numbers
+
+        % Ensure we don't split numbers at the chunk boundary
         if ~feof(fid)
-            % Look for last whitespace to avoid splitting numbers
             last_space = find(isspace(chunk_text), 1, 'last');
             if ~isempty(last_space) && last_space < length(chunk_text)
-                % Keep only complete numbers
                 remaining_chars = chunk_text(last_space+1:end);
                 chunk_text = chunk_text(1:last_space);
-                
-                % Move file position back for the incomplete part
                 fseek(fid, ftell(fid) - length(remaining_chars), 'bof');
             end
         end
-        
+
         % Parse numbers from this chunk
         try
             chunk_numbers = sscanf(chunk_text, '%f');
-            if ~isempty(chunk_numbers)
-                all_numbers = [all_numbers; chunk_numbers];
-                fprintf('        Parsed %d numbers (total: %d)\n', length(chunk_numbers), length(all_numbers));
-            end
         catch ME
             fprintf('        Warning: Failed to parse chunk %d: %s\n', chunk_count, ME.message);
+            chunk_numbers = [];
         end
-        
-        % Check if we have enough data for the inlet boundary
-        expected_total = N_total * 3;
-        if length(all_numbers) >= expected_total
-            fprintf('      Sufficient data collected (%d numbers)\n', length(all_numbers));
+
+        L = length(chunk_numbers);
+        if L == 0
+            continue;
+        end
+
+        s = global_idx + 1;   % start index in the global number stream
+        e = global_idx + L;    % end index
+
+        % Helper inline to copy overlap from chunk into target buffer
+        % Overlap with X segment [x_a, x_b]
+        if x_written < inlet_points
+            o_start = max(x_a, s);
+            o_end   = min(x_b, e);
+            if o_start <= o_end
+                cs = o_start - s + 1;    % chunk start idx
+                ce = o_end   - s + 1;    % chunk end idx
+                n = ce - cs + 1;
+                x_data(x_written+1:x_written+n) = chunk_numbers(cs:ce);
+                x_written = x_written + n;
+            end
+        end
+
+        % Overlap with Y segment [y_a, y_b]
+        if y_written < inlet_points
+            o_start = max(y_a, s);
+            o_end   = min(y_b, e);
+            if o_start <= o_end
+                cs = o_start - s + 1;
+                ce = o_end   - s + 1;
+                n = ce - cs + 1;
+                y_data(y_written+1:y_written+n) = chunk_numbers(cs:ce);
+                y_written = y_written + n;
+            end
+        end
+
+        % Overlap with Z segment [z_a, z_b]
+        if z_written < inlet_points
+            o_start = max(z_a, s);
+            o_end   = min(z_b, e);
+            if o_start <= o_end
+                cs = o_start - s + 1;
+                ce = o_end   - s + 1;
+                n = ce - cs + 1;
+                z_data(z_written+1:z_written+n) = chunk_numbers(cs:ce);
+                z_written = z_written + n;
+            end
+        end
+
+        global_idx = e;
+
+        % Early exit if we have all required data
+        if x_written == inlet_points && y_written == inlet_points && z_written == inlet_points
+            fprintf('      Collected all inlet coordinates by chunk %d\n', chunk_count);
             break;
         end
-        
-        % Prevent infinite loops for very large files
-        if chunk_count > 1000
-            fprintf('      Maximum chunks reached, proceeding with available data\n');
+
+        % Safety to avoid excessively long loops
+        if chunk_count > 2000
+            fprintf('      Maximum chunk limit reached; stopping stream parse\n');
             break;
         end
     end
-    
-    fprintf('    Total numbers parsed: %d\n', length(all_numbers));
-    
-    % Validate we have enough data
-    expected_total = N_total * 3;
-    if length(all_numbers) < expected_total
-        warning('Insufficient data: expected %d, got %d numbers', expected_total, length(all_numbers));
-        % Pad with zeros if needed
-        all_numbers = [all_numbers; zeros(expected_total - length(all_numbers), 1)];
+
+    fprintf('    Collected: X=%d/%d, Y=%d/%d, Z=%d/%d\n', x_written, inlet_points, y_written, inlet_points, z_written, inlet_points);
+
+    % Validate completeness
+    if x_written < inlet_points || y_written < inlet_points || z_written < inlet_points
+        error('Insufficient inlet data: X=%d/%d, Y=%d/%d, Z=%d/%d', ...
+            x_written, inlet_points, y_written, inlet_points, z_written, inlet_points);
     end
-    
-    % Extract inlet coordinates (k=1 plane)
-    fprintf('    Extracting inlet boundary coordinates...\n');
-    
-    try
-        % X coordinates: first inlet_points numbers
-        inlet_x_data = all_numbers(1:inlet_points);
-        inlet_x = reshape(inlet_x_data, [Nx, Ny]);
-        
-        % Y coordinates: second set of inlet_points numbers
-        y_start = N_total + 1;
-        y_end = N_total + inlet_points;
-        inlet_y_data = all_numbers(y_start:y_end);
-        inlet_y = reshape(inlet_y_data, [Nx, Ny]);
-        
-        % Z coordinates: third set of inlet_points numbers
-        z_start = 2*N_total + 1;
-        z_end = 2*N_total + inlet_points;
-        inlet_z_data = all_numbers(z_start:z_end);
-        inlet_z = reshape(inlet_z_data, [Nx, Ny]);
-        
-        fprintf('  ✅ Inlet boundary streaming completed successfully\n');
-        
-    catch ME
-        error('Failed to extract inlet coordinates: %s', ME.message);
-    end
+
+    % Reshape to 2D planes
+    inlet_x = reshape(x_data, [Nx, Ny]);
+    inlet_y = reshape(y_data, [Nx, Ny]);
+    inlet_z = reshape(z_data, [Nx, Ny]);
+
+    fprintf('  ✅ Inlet boundary streaming completed successfully\n');
 end
